@@ -1,7 +1,23 @@
 import sys
 import cv2
 import numpy as np
+import subprocess
+import tempfile
+import os
 from PyQt5 import QtWidgets, QtGui, QtCore
+import time
+
+def capture_screen_area(x, y, w, h):
+    """
+    Erfasst unter Wayland den Bildschirmbereich mithilfe von grim.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+        filename = tmp_file.name
+    cmd = ["grim", "-g", f"{x},{y} {w}x{h}", filename]  # Änderung: korrekt formatiertes Geometrie-Argument
+    subprocess.run(cmd, check=True)
+    image = cv2.imread(filename)
+    os.remove(filename)
+    return image
 
 class AreaSelector(QtWidgets.QWidget):
     selection_done = QtCore.pyqtSignal(QtCore.QRect)
@@ -10,8 +26,16 @@ class AreaSelector(QtWidgets.QWidget):
         super().__init__()
         self.setWindowTitle("Bereich auswählen")
         self.setWindowState(QtCore.Qt.WindowFullScreen)
-        self.setWindowOpacity(0.3)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        # Entferne WA_TranslucentBackground wegen Wayland-Problemen
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 77);")  # Simuliert Transparenz
+        # Statt eines einheitlichen dunklen Hintergrunds simulieren wir Transparenz mit einem Screenshot
+        screen_geom = QtWidgets.QApplication.primaryScreen().geometry()
+        try:
+            full_image = capture_screen_area(screen_geom.x(), screen_geom.y(), screen_geom.width(), screen_geom.height())
+            self.bg_pixmap = self.cv2_to_qpixmap(full_image)
+        except Exception as e:
+            print("Fehler beim Laden des Desktop-Hintergrundes:", e)
+            self.bg_pixmap = None
         self.start = QtCore.QPoint()
         self.end = QtCore.QPoint()
         self.setCursor(QtGui.QCursor(QtCore.Qt.CrossCursor))
@@ -37,11 +61,29 @@ class AreaSelector(QtWidgets.QWidget):
         self.close()
 
     def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        # Zeichne den Desktop-Hintergrund, falls verfügbar
+        if self.bg_pixmap:
+            painter.drawPixmap(self.rect(), self.bg_pixmap)
+        else:
+            # Fallback: halbtransparenter schwarzer Hintergrund
+            painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 77))
+        # Zeichne Auswahlrechteck, falls aktiv
         if self.is_selecting:
-            painter = QtGui.QPainter(self)
             painter.setPen(QtGui.QPen(QtCore.Qt.red, 2))
             rect = QtCore.QRect(self.start, self.end)
             painter.drawRect(rect.normalized())
+
+    def cv2_to_qpixmap(self, img):
+        # Konvertierung von OpenCV-Bild zu QPixmap
+        height, width = img.shape[:2]
+        if len(img.shape) == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            qimg = QtGui.QImage(img.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
+        else:
+            bytes_per_line = width
+            qimg = QtGui.QImage(img.data, width, height, bytes_per_line, QtGui.QImage.Format_Grayscale8)
+        return QtGui.QPixmap.fromImage(qimg)
 
 class OverlayWindow(QtWidgets.QWidget):
     def __init__(self, capture_rect):
@@ -58,13 +100,13 @@ class OverlayWindow(QtWidgets.QWidget):
     def initUI(self):
         layout = QtWidgets.QVBoxLayout()
 
-        # Anzeige des Bildes
+        # Bildanzeige
         self.image_label = QtWidgets.QLabel("Edge Detection Output")
         self.image_label.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
         layout.addWidget(self.image_label)
 
         # Slider für unteren Schwellenwert
-        lower_label = QtWidgets.QLabel("Lower Threshold:")
+        lower_label = QtWidgets.QLabel("Lower Threshold: 50")
         lower_label.setStyleSheet("background-color: rgba(0, 0, 0, 150); color: white; padding: 5px;")
         layout.addWidget(lower_label)
 
@@ -74,10 +116,11 @@ class OverlayWindow(QtWidgets.QWidget):
         self.lower_slider.setValue(50)
         self.lower_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.lower_slider.setTickInterval(5)
+        self.lower_slider.valueChanged.connect(lambda val: lower_label.setText(f"Lower Threshold: {val}"))
         layout.addWidget(self.lower_slider)
 
         # Slider für oberen Schwellenwert
-        upper_label = QtWidgets.QLabel("Upper Threshold:")
+        upper_label = QtWidgets.QLabel("Upper Threshold: 150")
         upper_label.setStyleSheet("background-color: rgba(0, 0, 0, 150); color: white; padding: 5px;")
         layout.addWidget(upper_label)
 
@@ -87,59 +130,74 @@ class OverlayWindow(QtWidgets.QWidget):
         self.upper_slider.setValue(150)
         self.upper_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.upper_slider.setTickInterval(5)
+        self.upper_slider.valueChanged.connect(lambda val: upper_label.setText(f"Upper Threshold: {val}"))
         layout.addWidget(self.upper_slider)
+
+        # Slider für apertureSize
+        aperture_label = QtWidgets.QLabel("Aperture Size: 3")
+        aperture_label.setStyleSheet("background-color: rgba(0, 0, 0, 150); color: white; padding: 5px;")
+        layout.addWidget(aperture_label)
+
+        self.aperture_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.aperture_slider.setMinimum(0)  # 0 -> 3, 1 -> 5, 2 -> 7
+        self.aperture_slider.setMaximum(2)
+        self.aperture_slider.setValue(0)
+        self.aperture_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.aperture_slider.setTickInterval(1)
+        self.aperture_slider.valueChanged.connect(
+            lambda val: aperture_label.setText(f"Aperture Size: {3 + 2 * val}")
+        )
+        layout.addWidget(self.aperture_slider)
 
         self.setLayout(layout)
         self.resize(400, 400)
         self.move(100, 100)
 
     def update_image(self):
-        # Screenshot des definierten Bereichs
-        screen = QtWidgets.QApplication.primaryScreen()
-        screenshot = screen.grabWindow(0, self.capture_rect.x(), self.capture_rect.y(),
-                                         self.capture_rect.width(), self.capture_rect.height())
-        # Konvertiere QPixmap zu cv2 Bild
-        image = self.qpixmap_to_cv2(screenshot)
-        # Konvertiere in Graustufen
+        x = self.capture_rect.x()
+        y = self.capture_rect.y()
+        w = self.capture_rect.width()
+        h = self.capture_rect.height()
+        try:
+            image = capture_screen_area(x, y, w, h)
+            if image is None:
+                raise ValueError("Kein Bild erhalten.")
+        except (subprocess.CalledProcessError, ValueError) as e:
+            print("Fehler beim Screenshot: ", e)
+            return
+
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        # Hole Schwellenwerte von den Slidern
+        gray_inverted = cv2.bitwise_not(gray)  # Invertiere das Graustufenbild
         lower_val = self.lower_slider.value()
         upper_val = self.upper_slider.value()
-        # Wende Canny Edge Detection an
-        edges = cv2.Canny(gray, lower_val, upper_val)
-        # Konvertiere das Ergebnis in QPixmap und zeige es an
+        aperture_size = 3 + 2 * self.aperture_slider.value()  # Mappe Slider-Wert auf 3, 5 oder 7
+        edges = cv2.Canny(gray_inverted, lower_val, upper_val, apertureSize=aperture_size)
         pixmap = self.cv2_to_qpixmap(edges)
         self.image_label.setPixmap(pixmap)
         self.image_label.setScaledContents(True)
 
-    def qpixmap_to_cv2(self, qpixmap):
-        qimage = qpixmap.toImage()
-        qimage = qimage.convertToFormat(QtGui.QImage.Format.Format_RGBA8888)
-        width = qimage.width()
-        height = qimage.height()
-        ptr = qimage.bits()
-        ptr.setsize(height * width * 4)
-        arr = np.array(ptr).reshape(height, width, 4)
-        image = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-        return image
-
     def cv2_to_qpixmap(self, img):
-        # Annahme: img ist ein Graustufenbild
         height, width = img.shape
         bytes_per_line = width
         qimg = QtGui.QImage(img.data, width, height, bytes_per_line, QtGui.QImage.Format_Grayscale8)
         return QtGui.QPixmap.fromImage(qimg)
 
+# Globale Variable, um das Overlay am Leben zu halten
+overlay_window = None
+
 def main():
+    time.sleep(5)
     app = QtWidgets.QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)  # Anwendung bleibt aktiv, auch wenn das Auswahlfenster schließt.
     selector = AreaSelector()
-    selector.selection_done.connect(lambda rect: on_area_selected(rect, app))
+    selector.selection_done.connect(lambda rect: on_area_selected(rect))
     selector.show()
     sys.exit(app.exec_())
 
-def on_area_selected(rect, app):
-    overlay = OverlayWindow(rect)
-    overlay.show()
+def on_area_selected(rect):
+    global overlay_window
+    overlay_window = OverlayWindow(rect)
+    overlay_window.show()
 
 if __name__ == '__main__':
     main()
