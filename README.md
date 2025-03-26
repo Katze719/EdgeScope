@@ -1,28 +1,28 @@
-# EdgeScope
+# 🌟 EdgeScope
 
 EdgeScope is a Python-based graphical application for real-time edge detection on a selected screen area. It uses the PyQt5 library for the graphical user interface and OpenCV for image processing. The application is designed to work on Wayland-based systems and leverages the `grim` tool for capturing screen areas.
 
-## Features
+## ✨ Features
 
-- **Screen Area Selection**: Allows users to select a specific area of the screen for edge detection.
-- **Real-Time Edge Detection**: Continuously processes the selected screen area and displays the detected edges.
-- **Adjustable Parameters**:
+- 🖼️ **Screen Area Selection**: Allows users to select a specific area of the screen for edge detection.
+- ⚡ **Real-Time Edge Detection**: Continuously processes the selected screen area and displays the detected edges.
+- 🎛️ **Adjustable Parameters**:
   - **Lower Threshold**: Adjust the lower threshold for the Canny edge detection algorithm.
   - **Upper Threshold**: Adjust the upper threshold for the Canny edge detection algorithm.
   - **Aperture Size**: Choose the aperture size (3, 5, or 7) for the Sobel operator used in the Canny algorithm.
-- **Inverted Grayscale Processing**: Inverts the grayscale image before applying edge detection for better visibility.
+- 🌓 **Inverted Grayscale Processing**: Inverts the grayscale image before applying edge detection for better visibility.
 
-## Requirements
+## 📋 Requirements
 
-- Python 3.6 or higher
-- Wayland display server
-- The following Python libraries:
+- 🐍 Python 3.10 or higher
+- 🖥️ Wayland display server
+- 📦 The following Python libraries:
   - `PyQt5`
   - `opencv-python`
   - `numpy`
-- The `grim` tool for screen capturing on Wayland.
+- 📸 The `grim` tool for screen capturing on Wayland.
 
-## Installation
+## 🚀 Installation
 
 1. Clone the repository:
    ```bash
@@ -40,7 +40,7 @@ EdgeScope is a Python-based graphical application for real-time edge detection o
    sudo apt install grim
    ```
 
-## Usage
+## 🛠️ Usage
 
 1. Run the application:
    ```bash
@@ -58,7 +58,7 @@ EdgeScope is a Python-based graphical application for real-time edge detection o
 
 5. The edge detection output will update in real-time as you adjust the sliders.
 
-## How It Works
+## 🧠 How It Works
 
 1. **Screen Capture**: The application uses the `grim` tool to capture the selected screen area as an image.
 2. **Grayscale Conversion**: The captured image is converted to grayscale using OpenCV.
@@ -66,27 +66,27 @@ EdgeScope is a Python-based graphical application for real-time edge detection o
 4. **Edge Detection**: The Canny edge detection algorithm is applied to the inverted image using the user-defined parameters.
 5. **Display**: The processed image is displayed in the overlay window.
 
-## Known Issues
+## ⚠️ Known Issues
 
 - The application is designed for Wayland and may not work on X11 or other display servers.
 - The `grim` tool must be installed and functional for the application to work.
 
-## Future Improvements
+## 🌟 Future Improvements
 
 - Add support for saving the processed edge detection output as an image.
 - Extend compatibility to X11-based systems.
 - Improve error handling and user feedback.
 
-## License
+## 📜 License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 - [PyQt5](https://riverbankcomputing.com/software/pyqt/intro) for the GUI framework.
 - [OpenCV](https://opencv.org/) for image processing.
 - [grim](https://github.com/emersion/grim) for screen capturing on Wayland.
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests to improve the project.
