@@ -109,7 +109,7 @@ class OverlayWindow(QtWidgets.QWidget):
         self.initUI()
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update_image)
-        self.timer.start(1000)  # Aktualisierung alle 1000ms
+        self.timer.start(500)  # Aktualisierung alle 1000ms
 
     def initUI(self):
         layout = QtWidgets.QVBoxLayout()
