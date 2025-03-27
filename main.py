@@ -102,6 +102,7 @@ class OverlayWindow(QtWidgets.QWidget):
     def __init__(self, capture_rect):
         super().__init__()
         self.capture_rect = capture_rect
+        self.show_rectangles = False  # Standard: keine farbigen Rechtecke
         self.setWindowTitle("Edge Detection Overlay")
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.Tool)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
@@ -157,14 +158,21 @@ class OverlayWindow(QtWidgets.QWidget):
         self.aperture_slider.setValue(0)
         self.aperture_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.aperture_slider.setTickInterval(1)
-        self.aperture_slider.valueChanged.connect(
-            lambda val: aperture_label.setText(f"Aperture Size: {3 + 2 * val}")
-        )
+        self.aperture_slider.valueChanged.connect(lambda val: aperture_label.setText(f"Aperture Size: {3 + 2 * val}"))
         layout.addWidget(self.aperture_slider)
+
+        # Checkbox zum Umschalten der Anzeige
+        self.rectangles_checkbox = QtWidgets.QCheckBox("Farbige Rechtecke anzeigen")
+        self.rectangles_checkbox.setChecked(False)
+        self.rectangles_checkbox.stateChanged.connect(self.toggle_rectangles)
+        layout.addWidget(self.rectangles_checkbox)
 
         self.setLayout(layout)
         self.resize(400, 400)
         self.move(100, 100)
+
+    def toggle_rectangles(self, state):
+        self.show_rectangles = (state == QtCore.Qt.Checked)
 
     def update_image(self):
         x = self.capture_rect.x()
@@ -175,11 +183,11 @@ class OverlayWindow(QtWidgets.QWidget):
             image = capture_screen_area(x, y, w, h)
             if image is None:
                 raise ValueError("Kein Bild erhalten.")
-        except (subprocess.CalledProcessError, ValueError) as e:
+        except Exception as e:
             print("Fehler beim Screenshot: ", e)
             return
 
-        # Umwandlung in Graustufen und Invertierung
+        # Erzeuge Graustufenbild und invertiere es
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         gray_inverted = cv2.bitwise_not(gray)
         lower_val = self.lower_slider.value()
@@ -187,30 +195,31 @@ class OverlayWindow(QtWidgets.QWidget):
         aperture_size = 3 + 2 * self.aperture_slider.value()
         edges = cv2.Canny(gray_inverted, lower_val, upper_val, apertureSize=aperture_size)
 
-        # Konturenerkennung
-        contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for cnt in contours:
-            epsilon = 0.02 * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
-            if len(approx) == 4:
-                # Zeichne das Rechteck in grün mit einer Liniendicke von 2
-                cv2.drawContours(image, [approx], 0, (0, 255, 0), 2)
+        if self.show_rectangles:
+            # Für farbige Rechtecke: Wandle das Kantenbild in ein BGR-Bild um
+            output = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+            contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                epsilon = 0.02 * cv2.arcLength(cnt, True)
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
+                if len(approx) == 4:
+                    cv2.drawContours(output, [approx], 0, (0, 255, 0), 2)
+        else:
+            # Nur das Schwarz-Weiß-Kantenbild anzeigen
+            output = edges
 
-        # Umwandlung in QPixmap und Anzeige im Overlay
-        pixmap = self.cv2_to_qpixmap(image)
+        pixmap = self.cv2_to_qpixmap(output)
         self.image_label.setPixmap(pixmap)
         self.image_label.setScaledContents(True)
 
     def cv2_to_qpixmap(self, img):
         if len(img.shape) == 3:
             height, width = img.shape[:2]
-            # Konvertiere BGR zu RGB
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             qimg = QtGui.QImage(img_rgb.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
         else:
             height, width = img.shape
             qimg = QtGui.QImage(img.data, width, height, width, QtGui.QImage.Format_Grayscale8)
-        # Erstelle eine Kopie, um sicherzustellen, dass das QImage seinen eigenen Speicher besitzt
         return QtGui.QPixmap.fromImage(qimg.copy())
 
     def mousePressEvent(self, event):
