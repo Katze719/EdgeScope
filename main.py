@@ -9,15 +9,28 @@ import time
 
 def capture_screen_area(x, y, w, h):
     """
-    Erfasst unter Wayland den Bildschirmbereich mithilfe von grim.
+    Erfasst den Bildschirmbereich.
+    Unter Windows wird dafür ImageGrab von PIL genutzt, unter anderen Systemen (z.B. Wayland) wird grim verwendet.
     """
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-        filename = tmp_file.name
-    cmd = ["grim", "-g", f"{x},{y} {w}x{h}", filename]  # Änderung: korrekt formatiertes Geometrie-Argument
-    subprocess.run(cmd, check=True)
-    image = cv2.imread(filename)
-    os.remove(filename)
-    return image
+    if os.name == "nt":  # Windows
+        try:
+            from PIL import ImageGrab
+        except ImportError:
+            print("Das Modul Pillow (PIL) ist nicht installiert. Bitte führe 'pip install Pillow' aus.")
+            sys.exit(1)
+        bbox = (x, y, x + w, y + h)
+        img = ImageGrab.grab(bbox=bbox)
+        # Konvertiere PIL-Image zu OpenCV-Bild (BGR-Format)
+        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        return img
+    else:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            filename = tmp_file.name
+        cmd = ["grim", "-g", f"{x},{y} {w}x{h}", filename]
+        subprocess.run(cmd, check=True)
+        image = cv2.imread(filename)
+        os.remove(filename)
+        return image
 
 class AreaSelector(QtWidgets.QWidget):
     selection_done = QtCore.pyqtSignal(QtCore.QRect)
@@ -166,27 +179,55 @@ class OverlayWindow(QtWidgets.QWidget):
             print("Fehler beim Screenshot: ", e)
             return
 
+        # Umwandlung in Graustufen und Invertierung
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        gray_inverted = cv2.bitwise_not(gray)  # Invertiere das Graustufenbild
+        gray_inverted = cv2.bitwise_not(gray)
         lower_val = self.lower_slider.value()
         upper_val = self.upper_slider.value()
-        aperture_size = 3 + 2 * self.aperture_slider.value()  # Mappe Slider-Wert auf 3, 5 oder 7
+        aperture_size = 3 + 2 * self.aperture_slider.value()
         edges = cv2.Canny(gray_inverted, lower_val, upper_val, apertureSize=aperture_size)
-        pixmap = self.cv2_to_qpixmap(edges)
+
+        # Konturenerkennung
+        contours, _ = cv2.findContours(edges.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in contours:
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            if len(approx) == 4:
+                # Zeichne das Rechteck in grün mit einer Liniendicke von 2
+                cv2.drawContours(image, [approx], 0, (0, 255, 0), 2)
+
+        # Umwandlung in QPixmap und Anzeige im Overlay
+        pixmap = self.cv2_to_qpixmap(image)
         self.image_label.setPixmap(pixmap)
         self.image_label.setScaledContents(True)
 
     def cv2_to_qpixmap(self, img):
-        height, width = img.shape
-        bytes_per_line = width
-        qimg = QtGui.QImage(img.data, width, height, bytes_per_line, QtGui.QImage.Format_Grayscale8)
-        return QtGui.QPixmap.fromImage(qimg)
+        if len(img.shape) == 3:
+            height, width = img.shape[:2]
+            # Konvertiere BGR zu RGB
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            qimg = QtGui.QImage(img_rgb.data, width, height, 3 * width, QtGui.QImage.Format_RGB888)
+        else:
+            height, width = img.shape
+            qimg = QtGui.QImage(img.data, width, height, width, QtGui.QImage.Format_Grayscale8)
+        # Erstelle eine Kopie, um sicherzustellen, dass das QImage seinen eigenen Speicher besitzt
+        return QtGui.QPixmap.fromImage(qimg.copy())
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == QtCore.Qt.LeftButton:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
 
 # Globale Variable, um das Overlay am Leben zu halten
 overlay_window = None
 
 def main():
-    time.sleep(5)
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Anwendung bleibt aktiv, auch wenn das Auswahlfenster schließt.
     selector = AreaSelector()
